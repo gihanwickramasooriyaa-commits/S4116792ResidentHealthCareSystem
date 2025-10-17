@@ -1,19 +1,13 @@
 package model;
 
-public class Prescription {
-
-}
-package model;
-
 import java.io.Serializable;
 import java.time.LocalTime;
 
-/** A single medicine instruction for a resident. */
 public class Prescription implements Serializable {
     private final String medicine;
-    private final String dosage;        // e.g. "500mg"
-    private final LocalTime time;       // e.g. 09:00
-    private final String doctorId;      // who created it
+    private final String dosage;
+    private final LocalTime time;
+    private final String doctorId;
 
     public Prescription(String medicine, String dosage, LocalTime time, String doctorId) {
         this.medicine = medicine;
