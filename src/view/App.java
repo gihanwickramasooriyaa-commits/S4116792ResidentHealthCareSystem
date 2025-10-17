@@ -14,6 +14,7 @@ import model.*;
 import util.Validators;                   // validation
 
 import java.io.PrintWriter;               // for CSV export
+import java.time.DayOfWeek;
 import java.time.LocalTime;
 import java.util.List;
 
@@ -44,10 +45,11 @@ public class App extends Application {
         root = new BorderPane();
         root.setPadding(new Insets(10));
 
-        // ==== MenuBar (File -> Export audit) ====
+        // ==== MenuBar (File + Staff) ====
         MenuBar menuBar = new MenuBar();
-        Menu fileMenu = new Menu("File");
 
+        // File menu
+        Menu fileMenu = new Menu("File");
         MenuItem exportAudit = new MenuItem("Export audit log…");
         exportAudit.setOnAction(e -> {
             try (PrintWriter out = new PrintWriter("audit.csv")) {
@@ -58,9 +60,26 @@ public class App extends Application {
                 info("Export", "Audit log written to audit.csv");
             } catch (Exception ex) { error(ex); }
         });
-
         fileMenu.getItems().addAll(exportAudit);
-        menuBar.getMenus().addAll(fileMenu);
+
+        // Staff menu (manager utilities)
+        Menu staffMenu = new Menu("Staff");
+
+        MenuItem addNurse = new MenuItem("Add Nurse…");
+        addNurse.setOnAction(e -> addNurseDialog());
+
+        MenuItem addDoctor = new MenuItem("Add Doctor…");
+        addDoctor.setOnAction(e -> addDoctorDialog());
+
+        MenuItem changePw = new MenuItem("Change Staff Password…");
+        changePw.setOnAction(e -> changePasswordDialog());
+
+        MenuItem editShifts = new MenuItem("Edit Nurse Shifts…");
+        editShifts.setOnAction(e -> editShiftsDialog());
+
+        staffMenu.getItems().addAll(addNurse, addDoctor, new SeparatorMenuItem(), changePw, editShifts);
+
+        menuBar.getMenus().addAll(fileMenu, staffMenu);
 
         // ==== ToolBar (Role + Save/Load + Compliance) ====
         ToolBar bar = new ToolBar();
@@ -166,6 +185,11 @@ public class App extends Application {
                     MenuItem addRes = new MenuItem("Add resident here…");
                     addRes.setOnAction(e -> addResidentHere(bed));
                     menu.getItems().add(addRes);
+                } else {
+                    // Manager: discharge
+                    MenuItem discharge = new MenuItem("Discharge resident…");
+                    discharge.setOnAction(e -> dischargeResident(bed.getOccupant()));
+                    menu.getItems().add(discharge);
                 }
             } else if (currentRole == Role.NURSE) {
                 if (bed.isOccupied()) {
@@ -176,6 +200,12 @@ public class App extends Application {
                                 + ". Now right-click a VACANT bed → Move here.");
                     });
                     menu.getItems().add(select);
+
+                    // Nurse: administered dose
+                    MenuItem administer = new MenuItem("Mark dose administered…");
+                    administer.setOnAction(e -> markDoseAdministered(bed.getOccupant()));
+                    menu.getItems().add(administer);
+
                 } else {
                     MenuItem moveHere = new MenuItem("Move selected resident here");
                     moveHere.setDisable(selectedBed == null || !selectedBed.isOccupied() || selectedBed == bed);
@@ -283,6 +313,183 @@ public class App extends Application {
 
                 HOME.addPrescription(doctor, r.getId(), new Prescription(vals.get(0), vals.get(1), t, doctor.getId()));
                 info("Prescription", "Added.");
+            } catch (Exception ex) { error(ex); }
+        });
+    }
+
+    // Nurse action handler
+    private void markDoseAdministered(Resident r) {
+        Dialog<java.util.List<String>> dlg = new Dialog<>();
+        dlg.setTitle("Administer medication to " + r.getName());
+        dlg.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+
+        GridPane gp = new GridPane(); gp.setHgap(8); gp.setVgap(8);
+        TextField med  = new TextField();
+        TextField dose = new TextField("500mg");
+        TextField time = new TextField(java.time.LocalTime.now().toString().substring(0,5)); // HH:mm
+        gp.addRow(0, new Label("Medicine:"), med);
+        gp.addRow(1, new Label("Dosage:"), dose);
+        gp.addRow(2, new Label("Time (HH:MM):"), time);
+        dlg.getDialogPane().setContent(gp);
+
+        dlg.setResultConverter(bt -> bt == ButtonType.OK
+                ? java.util.List.of(med.getText(), dose.getText(), time.getText())
+                : null);
+
+        dlg.showAndWait().ifPresent(vals -> {
+            try {
+                Validators.require(!vals.get(0).isBlank(), "Medicine required.");
+                Validators.require(!vals.get(1).isBlank(), "Dosage required.");
+                java.time.LocalTime t = Validators.parseTime(vals.get(2));
+
+                HOME.administerMedication(
+                        nurse, r.getId(), vals.get(0), vals.get(1),
+                        java.time.LocalDateTime.of(java.time.LocalDate.now(), t)
+                );
+                info("Administered", "Recorded dose for " + r.getName());
+            } catch (Exception ex) {
+                error(ex);
+            }
+        });
+    }
+
+    // Manager discharge handler
+    private void dischargeResident(Resident r) {
+        TextInputDialog td = new TextInputDialog("archive_" + r.getId() + ".csv");
+        td.setTitle("Discharge Resident");
+        td.setHeaderText("Archive file name");
+        td.setContentText("CSV filename:");
+        td.showAndWait().ifPresent(name -> {
+            try {
+                Validators.require(!name.isBlank(), "Filename required.");
+                HOME.dischargeResident(mgr, r.getId(), name);
+                refreshUI();
+                info("Discharged", r.getName() + " archived to " + name);
+            } catch (Exception ex) { error(ex); }
+        });
+    }
+
+    // ---------------- Staff menu handlers ----------------
+    private void addNurseDialog() {
+        Dialog<List<String>> d = new Dialog<>();
+        d.setTitle("Add Nurse");
+        d.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+
+        GridPane gp = new GridPane(); gp.setHgap(8); gp.setVgap(8);
+        TextField id=new TextField(), name=new TextField(), gender=new TextField("F"),
+                user=new TextField("nurse2"), pass=new TextField("pw");
+        gp.addRow(0, new Label("ID:"), id);
+        gp.addRow(1, new Label("Name:"), name);
+        gp.addRow(2, new Label("Gender (M/F):"), gender);
+        gp.addRow(3, new Label("Username:"), user);
+        gp.addRow(4, new Label("Password:"), pass);
+        d.getDialogPane().setContent(gp);
+
+        d.setResultConverter(bt -> bt==ButtonType.OK ? List.of(id.getText(),name.getText(),gender.getText(),user.getText(),pass.getText()) : null);
+
+        d.showAndWait().ifPresent(v -> {
+            try {
+                Validators.require(!v.get(0).isBlank(), "ID required");
+                Validators.require(!v.get(1).isBlank(), "Name required");
+                char g = Validators.parseGender(v.get(2));
+                Validators.require(!v.get(3).isBlank(), "Username required");
+                Validators.require(!v.get(4).isBlank(), "Password required");
+
+                Nurse n = new Nurse(v.get(0), v.get(1), g, v.get(3), v.get(4));
+                HOME.addStaff(mgr, n);
+                info("Staff", "Nurse added: " + n.getName());
+            } catch (Exception ex) { error(ex); }
+        });
+    }
+
+    private void addDoctorDialog() {
+        Dialog<List<String>> d = new Dialog<>();
+        d.setTitle("Add Doctor");
+        d.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+
+        GridPane gp = new GridPane(); gp.setHgap(8); gp.setVgap(8);
+        TextField id=new TextField(), name=new TextField(), gender=new TextField("M"),
+                user=new TextField("doctor2"), pass=new TextField("pw"), spec=new TextField("General");
+        gp.addRow(0, new Label("ID:"), id);
+        gp.addRow(1, new Label("Name:"), name);
+        gp.addRow(2, new Label("Gender (M/F):"), gender);
+        gp.addRow(3, new Label("Username:"), user);
+        gp.addRow(4, new Label("Password:"), pass);
+        gp.addRow(5, new Label("Specialization:"), spec);
+        d.getDialogPane().setContent(gp);
+
+        d.setResultConverter(bt -> bt==ButtonType.OK ? List.of(id.getText(),name.getText(),gender.getText(),user.getText(),pass.getText(),spec.getText()) : null);
+
+        d.showAndWait().ifPresent(v -> {
+            try {
+                Validators.require(!v.get(0).isBlank(), "ID required");
+                Validators.require(!v.get(1).isBlank(), "Name required");
+                char g = Validators.parseGender(v.get(2));
+                Validators.require(!v.get(3).isBlank(), "Username required");
+                Validators.require(!v.get(4).isBlank(), "Password required");
+                Validators.require(!v.get(5).isBlank(), "Specialization required");
+
+                Doctor doc = new Doctor(v.get(0), v.get(1), g, v.get(3), v.get(4), v.get(5));
+                HOME.addStaff(mgr, doc);
+                info("Staff", "Doctor added: " + doc.getName());
+            } catch (Exception ex) { error(ex); }
+        });
+    }
+
+    private void changePasswordDialog() {
+        Dialog<List<String>> d = new Dialog<>();
+        d.setTitle("Change Staff Password");
+        d.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+
+        GridPane gp = new GridPane(); gp.setHgap(8); gp.setVgap(8);
+        TextField user=new TextField(), pass=new TextField();
+        gp.addRow(0, new Label("Username:"), user);
+        gp.addRow(1, new Label("New password:"), pass);
+        d.getDialogPane().setContent(gp);
+
+        d.setResultConverter(bt -> bt==ButtonType.OK ? List.of(user.getText(), pass.getText()) : null);
+
+        d.showAndWait().ifPresent(v -> {
+            try {
+                Validators.require(!v.get(0).isBlank(), "Username required");
+                Validators.require(!v.get(1).isBlank(), "Password required");
+                HOME.changeStaffPassword(mgr, v.get(0), v.get(1));
+                info("Staff", "Password updated.");
+            } catch (Exception ex) { error(ex); }
+        });
+    }
+
+    private void editShiftsDialog() {
+        Dialog<List<String>> d = new Dialog<>();
+        d.setTitle("Assign Nurse Shift");
+        d.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+
+        GridPane gp = new GridPane(); gp.setHgap(8); gp.setVgap(8);
+        TextField user=new TextField("nina");
+        ComboBox<DayOfWeek> day = new ComboBox<>();
+        day.getItems().addAll(DayOfWeek.values());
+        day.setValue(DayOfWeek.MONDAY);
+
+        ComboBox<String> slot = new ComboBox<>();
+        slot.getItems().addAll("08:00-16:00","14:00-22:00");
+        slot.setValue("08:00-16:00");
+
+        gp.addRow(0, new Label("Nurse username:"), user);
+        gp.addRow(1, new Label("Day:"), day);
+        gp.addRow(2, new Label("Shift:"), slot);
+        d.getDialogPane().setContent(gp);
+
+        d.setResultConverter(bt -> bt==ButtonType.OK ? List.of(user.getText(), day.getValue().name(), slot.getValue()) : null);
+
+        d.showAndWait().ifPresent(v -> {
+            try {
+                Validators.require(!v.get(0).isBlank(), "Username required");
+                var parts = v.get(2).split("-");
+                LocalTime start = LocalTime.parse(parts[0]);
+                LocalTime end   = LocalTime.parse(parts[1]);
+                Shift s = new Shift(DayOfWeek.valueOf(v.get(1)), start, end);
+                HOME.addShiftForNurse(mgr, v.get(0), s);
+                info("Shifts", "Shift assigned.");
             } catch (Exception ex) { error(ex); }
         });
     }

@@ -6,13 +6,14 @@ import java.util.List;
 
 /**
  * Represents a resident (patient) in the Care Home.
- * Holds current bed assignment and prescriptions.
+ * Holds current bed assignment, prescriptions, and administered doses.
  */
 public class Resident extends Person implements Serializable {
 
     private int age;
     private Bed bed;                               // null if not assigned yet
     private final List<Prescription> prescriptions = new ArrayList<>();
+    private final List<AdministrationRecord> administrations = new ArrayList<>(); // ✅ new
 
     public Resident(String id, String name, char gender, int age) {
         super(id, name, gender);
@@ -28,9 +29,17 @@ public class Resident extends Person implements Serializable {
 
     public List<Prescription> getPrescriptions() { return prescriptions; }
 
+    /** All administered medication records for this resident. */
+    public List<AdministrationRecord> getAdministrations() { return administrations; }
+
     // --- domain helpers ---
     public void addPrescription(Prescription p) {
         prescriptions.add(p);
+    }
+
+    /** Record a single administered dose. */
+    public void addAdministration(AdministrationRecord rec) {
+        administrations.add(rec);
     }
 
     @Override
